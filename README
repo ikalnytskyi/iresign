@@ -1,0 +1,27 @@
+                           // iResign //
+
+              a tool for recodesigning iOS applications
+
+
+    ~ What is iResign?
+
+      iResign is a tool for recodesigning iOS applications.  There are many
+      scripts with similar functionality but iResign is my very own bicycle. :)
+
+
+    ~ How to install?
+
+      There are two installation ways. The first one is to use `pip` tool:
+
+          $ pip install iResign
+
+      The second is to run `setup.py` script manually:
+
+          $ python setup.py install
+
+      Keep in mind that you may need a superuser privileges.
+
+
+    ~ How to use?
+
+      See `$ iresign --help` for details.

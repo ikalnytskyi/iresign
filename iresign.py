@@ -1,0 +1,200 @@
+#!/usr/bin/env python
+# coding: utf-8
+"""
+    iResign
+    ~~~~~~~
+
+    iResign is a tool for recodesigning iOS applications.  There are many
+    scripts with similar functionality but iResign is my very own bicycle.
+
+    The script written just for fun. I just want to print some useful info
+    during recodesigning and this script does it well! Moreover, it's Python
+    so you can easy to extend it in your own way.
+
+    :copyright: (c) 2013, Igor Kalnitsky <igor@kalnitsky.org>
+    :license: 3-clause BSD, see LICENSE for details.
+"""
+import os
+import shutil
+import argparse
+import plistlib
+import tempfile
+import subprocess
+
+
+__version__ = '0.1-dev'
+
+
+def read_plist_from_string(data):
+    """
+    Read Plist file from a given data. Also, the functions strips binary
+    signature if needed and use respective read function depend on Python
+    version.
+    """
+    # strip binary signature if exists
+    beg, end = '<?xml', '</plist>'
+    beg, end = data.index(beg), data.index(end) + len(end)
+    data = data[beg: end]
+
+    # if python 2.x
+    if 'readPlistFromString' in dir(plistlib):
+        return plistlib.readPlistFromString(data)
+    return plistlib.readPlistFromBytes(data)
+
+
+class ProvisioningProfile(object):
+    """
+    A simple wrapper over a provisioning profile which is providing useful
+    methods to access the profile's fields such as name, uuid or task allow.
+    """
+    def __init__(self, provisioning_profile_filename):
+        content = self.__get_provision_content(provisioning_profile_filename)
+
+        properties_map = {
+            'filename':      provisioning_profile_filename,
+            'uuid':          content['UUID'],
+            'name':          content['Name'],
+            'app_id_prefix': content['ApplicationIdentifierPrefix'][0],
+            'entitlements':  content['Entitlements'],
+            'app_id':        content['Entitlements']['application-identifier'],
+            'aps_env':       content['Entitlements']['aps-environment'],
+            'task_allow':    content['Entitlements']['get-task-allow'],
+        }
+
+        for key, value in properties_map.items():
+            setattr(self, key, value)
+
+    def __get_provision_content(self, filename):
+        """
+        Read a given provisioning profile and return its content.
+        """
+        with open(filename, 'rb') as f:
+            return read_plist_from_string(f.read())
+
+
+class Application(object):
+    """
+    A simple wrapper over an iOS application which is providing useful
+    methods to access application's properties.
+    """
+    def __init__(self, app_filename):
+        provision_file = os.path.join(app_filename, 'embedded.mobileprovision')
+
+        properties_map = {
+            'filename':          app_filename,
+            'provision':         ProvisioningProfile(provision_file),
+        }
+
+        for key, value in properties_map.items():
+            setattr(self, key, value)
+
+
+def generate_entitlements(provision_entitlements, app):
+    """
+    Merge provision entitlements with application ones. Please note,
+    it's important to save a `keychain-access-groups` from the application.
+    """
+    # get keychain-access-groups from the application
+    command = 'codesign --display --entitlements - "%s"' % app.filename
+    entitlements = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE)
+    entitlements = read_plist_from_string(entitlements.communicate()[0])
+    access_groups = entitlements.get('keychain-access-groups')
+
+    # use application keychain-acccess-groups in the new entitlements
+    if access_groups:
+        provision_entitlements['keychain-access-groups'] = access_groups
+
+    return provision_entitlements
+
+
+def recodesign(app, provision, identity, dryrun=False):
+    """
+    ReCodeSign a given app with a given provision and identity pair.
+    """
+    # embeding a new provisioning profile
+    if not dryrun:
+        shutil.copyfile(provision.filename, app.provision.filename)
+
+    # generate a new entitlements
+    entitlements_dict = generate_entitlements(provision.entitlements, app)
+    entitlements = tempfile.NamedTemporaryFile(suffix=".plist", delete=False)
+    entitlements.write(plistlib.writePlistToString(entitlements_dict))
+    entitlements.close()
+
+    # recodesign
+    command = 'codesign {dryrun} -f -s "{identity}" --entitlements {entitlements} ' \
+              '--preserve-metadata=resource-rules {app}'
+
+    p = subprocess.Popen(command.format(
+        dryrun='--dryrun' if dryrun else '',
+        identity=identity,
+        entitlements=entitlements.name,
+        app=app.filename
+    ), shell=True, stderr=subprocess.PIPE)
+    p.wait()
+
+    os.unlink(entitlements.name)
+
+
+def show_provision_info(provision):
+    """
+    Print information about a given provisioning profile.
+    """
+    print('')
+    print('     Provision :: %s' % os.path.basename(provision.filename))
+    print('')
+    print('          UUID:   %s' % provision.uuid)
+    print('          Name:   %s' % provision.name)
+    print('        App ID:   %s' % provision.app_id)
+    print('       APS Env:   %s' % provision.aps_env)
+    print('    Task Allow:   %s' % provision.task_allow)
+    print('')
+
+
+def main():
+    """
+    iResign's entry point.
+    """
+    # parse command line arguments
+    arguments = parse_arguments()
+
+    # get main three components for recodesigning
+    application = Application(arguments.app)
+    provision = ProvisioningProfile(arguments.provisioning_profile)
+    identity = arguments.identity
+
+    # print verbose information
+    if arguments.verbose:
+        show_provision_info(application.provision)
+        show_provision_info(provision)
+
+    # recodesigning!
+    print('* Recodesigning :: {old} => {new}'.format(
+        old=application.provision.name, new=provision.name))
+    recodesign(application, provision, identity, arguments.dryrun)
+    print('* done!')
+
+
+def parse_arguments():
+    """
+    Parse command line arguments, check and return them if all is ok.
+    """
+    parser = argparse.ArgumentParser(
+        description='iResign is a tool for recodesigning iOS applications.')
+
+    parser.add_argument('app', help='the path to the iOS application file')
+    parser.add_argument('provisioning_profile', help='the path to the provisioning profile')
+    parser.add_argument('identity', nargs='?', default='iPhone Developer',
+                        help='the signing identity.')
+
+    parser.add_argument('-d', '--dryrun', dest='dryrun', action='store_true',
+                        help='show app/provision properties; don\'t resign the app')
+
+    parser.add_argument('-v', '--verbose', dest='verbose', action='store_true',
+                        help='show additional information')
+
+    return parser.parse_args()
+
+
+if __name__ == '__main__':
+    main()
