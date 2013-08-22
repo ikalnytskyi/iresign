@@ -27,9 +27,12 @@ __version__ = '0.1-dev'
 
 def read_plist_from_string(data):
     """
-    Read Plist file from a given data. Also, the functions strips binary
-    signature if needed and use respective read function depend on Python
-    version.
+    Parse a given data and return a plist object. If a given data has a
+    binary signature it will be striped before parsing.
+
+    .. note:: The function uses :meth:`~plistlib.readPlistFromString` method
+              for Python 2.x and :meth:`~plistlib.readPlistFromButes` for
+              Python 3.x.
     """
     # strip binary signature if exists
     beg, end = '<?xml', '</plist>'
@@ -42,16 +45,15 @@ def read_plist_from_string(data):
     return plistlib.readPlistFromBytes(data)
 
 
-class ProvisioningProfile(object):
+def read_provisioning_profile(filename):
     """
-    A simple wrapper over a provisioning profile which is providing useful
-    methods to access the profile's fields such as name, uuid or task allow.
+    Read and parse a given filename as provisioning profile, and return
+    a `dict` with profile's attributes.
     """
-    def __init__(self, provisioning_profile_filename):
-        content = self.__get_provision_content(provisioning_profile_filename)
-
-        properties_map = {
-            'filename':      provisioning_profile_filename,
+    with open(filename, 'rb') as f:
+        content = read_plist_from_string(f.read())
+        return {
+            'filename':      filename,
             'uuid':          content['UUID'],
             'name':          content['Name'],
             'app_id_prefix': content['ApplicationIdentifierPrefix'][0],
@@ -61,41 +63,26 @@ class ProvisioningProfile(object):
             'task_allow':    content['Entitlements']['get-task-allow'],
         }
 
-        for key, value in properties_map.items():
-            setattr(self, key, value)
 
-    def __get_provision_content(self, filename):
-        """
-        Read a given provisioning profile and return its content.
-        """
-        with open(filename, 'rb') as f:
-            return read_plist_from_string(f.read())
-
-
-class Application(object):
+def read_application(filename):
     """
-    A simple wrapper over an iOS application which is providing useful
-    methods to access application's properties.
+    Read iOS application file (.app) and return a `dict` with application's
+    attributes.
     """
-    def __init__(self, app_filename):
-        provision_file = os.path.join(app_filename, 'embedded.mobileprovision')
-
-        properties_map = {
-            'filename':          app_filename,
-            'provision':         ProvisioningProfile(provision_file),
-        }
-
-        for key, value in properties_map.items():
-            setattr(self, key, value)
+    provision = os.path.join(filename, 'embedded.mobileprovision')
+    return {
+        'filename':   filename,
+        'provision':  read_provisioning_profile(provision),
+    }
 
 
 def generate_entitlements(provision_entitlements, app):
     """
-    Merge provision entitlements with application ones. Please note,
-    it's important to save a `keychain-access-groups` from the application.
+    Merge provision entitlements with application one. We really need
+    to save a `keychain-access-groups` from the embedded entitlements.
     """
     # get keychain-access-groups from the application
-    command = 'codesign --display --entitlements - "%s"' % app.filename
+    command = 'codesign --display --entitlements - "%s"' % app['filename']
     entitlements = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE)
     entitlements = read_plist_from_string(entitlements.communicate()[0])
     access_groups = entitlements.get('keychain-access-groups')
@@ -103,7 +90,6 @@ def generate_entitlements(provision_entitlements, app):
     # use application keychain-acccess-groups in the new entitlements
     if access_groups:
         provision_entitlements['keychain-access-groups'] = access_groups
-
     return provision_entitlements
 
 
@@ -113,10 +99,10 @@ def recodesign(app, provision, identity, dryrun=False):
     """
     # embeding a new provisioning profile
     if not dryrun:
-        shutil.copyfile(provision.filename, app.provision.filename)
+        shutil.copyfile(provision['filename'], app['provision']['filename'])
 
     # generate a new entitlements
-    entitlements_dict = generate_entitlements(provision.entitlements, app)
+    entitlements_dict = generate_entitlements(provision['entitlements'], app)
     entitlements = tempfile.NamedTemporaryFile(suffix=".plist", delete=False)
     entitlements.write(plistlib.writePlistToString(entitlements_dict))
     entitlements.close()
@@ -129,7 +115,7 @@ def recodesign(app, provision, identity, dryrun=False):
         dryrun='--dryrun' if dryrun else '',
         identity=identity,
         entitlements=entitlements.name,
-        app=app.filename
+        app=app['filename']
     ), shell=True, stderr=subprocess.PIPE)
     p.wait()
 
@@ -141,13 +127,13 @@ def show_provision_info(provision):
     Print information about a given provisioning profile.
     """
     print('')
-    print('     Provision :: %s' % os.path.basename(provision.filename))
+    print('     Provision :: %s' % os.path.basename(provision['filename']))
     print('')
-    print('          UUID:   %s' % provision.uuid)
-    print('          Name:   %s' % provision.name)
-    print('        App ID:   %s' % provision.app_id)
-    print('       APS Env:   %s' % provision.aps_env)
-    print('    Task Allow:   %s' % provision.task_allow)
+    print('          UUID:   %s' % provision['uuid'])
+    print('          Name:   %s' % provision['name'])
+    print('        App ID:   %s' % provision['app_id'])
+    print('       APS Env:   %s' % provision['aps_env'])
+    print('    Task Allow:   %s' % provision['task_allow'])
     print('')
 
 
@@ -159,18 +145,18 @@ def main():
     arguments = parse_arguments()
 
     # get main three components for recodesigning
-    application = Application(arguments.app)
-    provision = ProvisioningProfile(arguments.provisioning_profile)
+    application = read_application(arguments.app)
+    provision = read_provisioning_profile(arguments.provisioning_profile)
     identity = arguments.identity
 
     # print verbose information
     if arguments.verbose:
-        show_provision_info(application.provision)
+        show_provision_info(application['provision'])
         show_provision_info(provision)
 
     # recodesigning!
     print('* Recodesigning :: {old} => {new}'.format(
-        old=application.provision.name, new=provision.name))
+        old=application['provision']['name'], new=provision['name']))
     recodesign(application, provision, identity, arguments.dryrun)
     print('* done!')
 
