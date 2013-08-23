@@ -188,15 +188,18 @@ def parse_arguments():
         description='iResign is a tool for recodesigning iOS applications.')
 
     parser.add_argument('app', help='the path to the iOS application file')
-    parser.add_argument('provisioning_profile', help='the path to the provisioning profile')
+
+    parser.add_argument('provisioning_profile',
+                        help='the path to the provisioning profile')
+
     parser.add_argument('identity', nargs='?', default='iPhone Developer',
-                        help='the signing identity.')
+                        help='the signing identity')
 
     parser.add_argument('-d', '--dryrun', dest='dryrun', action='store_true',
-                        help='show app/provision properties; don\'t resign the app')
+                        help='test posibility of recodesigning')
 
     parser.add_argument('-v', '--verbose', dest='verbose', action='store_true',
-                        help='show additional information')
+                        help='show info about provisioning profiles')
 
     return parser.parse_args()
 
