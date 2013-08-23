@@ -15,6 +15,7 @@
     :license: 3-clause BSD, see LICENSE for details.
 """
 import os
+import sys
 import shutil
 import argparse
 import plistlib
@@ -25,24 +26,38 @@ import subprocess
 __version__ = '0.1-dev'
 
 
-def read_plist_from_string(data):
-    """
-    Parse a given data and return a plist object. If a given data has a
-    binary signature it will be striped before parsing.
+PY2 = sys.version_info[0] == 2
+if PY2:
+    write_plist_to_string = plistlib.writePlistToString
 
-    .. note:: The function uses :meth:`~plistlib.readPlistFromString` method
-              for Python 2.x and :meth:`~plistlib.readPlistFromButes` for
-              Python 3.x.
-    """
-    # strip binary signature if exists
-    beg, end = '<?xml', '</plist>'
-    beg, end = data.index(beg), data.index(end) + len(end)
-    data = data[beg: end]
+    def read_plist_from_string(data):
+        """
+        Parse a given data and return a plist object. If a given data has a
+        binary signature it will be striped before parsing.
+        """
+        # strip binary signature if exists
+        beg, end = '<?xml', '</plist>'
+        beg, end = data.index(beg), data.index(end) + len(end)
+        data = data[beg: end]
 
-    # if python 2.x
-    if 'readPlistFromString' in dir(plistlib):
         return plistlib.readPlistFromString(data)
-    return plistlib.readPlistFromBytes(data)
+else:
+    write_plist_to_string = plistlib.writePlistToBytes
+
+    def read_plist_from_string(data):
+        """
+        Parse a given data and return a plist object. If a given data has a
+        binary signature it will be striped before parsing.
+        """
+        data = data.decode('latin1')
+
+        # strip binary signature if exists
+        beg, end = '<?xml', '</plist>'
+        beg, end = data.index(beg), data.index(end) + len(end)
+        data = data[beg: end]
+
+        data = data.encode('latin1')
+        return plistlib.readPlistFromBytes(data)
 
 
 def read_provisioning_profile(filename):
@@ -50,18 +65,20 @@ def read_provisioning_profile(filename):
     Read and parse a given filename as provisioning profile, and return
     a `dict` with profile's attributes.
     """
+    content = {}
     with open(filename, 'rb') as f:
         content = read_plist_from_string(f.read())
-        return {
-            'filename':      filename,
-            'uuid':          content['UUID'],
-            'name':          content['Name'],
-            'app_id_prefix': content['ApplicationIdentifierPrefix'][0],
-            'entitlements':  content['Entitlements'],
-            'app_id':        content['Entitlements']['application-identifier'],
-            'aps_env':       content['Entitlements']['aps-environment'],
-            'task_allow':    content['Entitlements']['get-task-allow'],
-        }
+
+    return {
+        'filename':      filename,
+        'uuid':          content['UUID'],
+        'name':          content['Name'],
+        'app_id_prefix': content['ApplicationIdentifierPrefix'][0],
+        'entitlements':  content['Entitlements'],
+        'app_id':        content['Entitlements']['application-identifier'],
+        'aps_env':       content['Entitlements']['aps-environment'],
+        'task_allow':    content['Entitlements']['get-task-allow'],
+    }
 
 
 def read_application(filename):
@@ -82,9 +99,11 @@ def generate_entitlements(provision_entitlements, app):
     to save a `keychain-access-groups` from the embedded entitlements.
     """
     # get keychain-access-groups from the application
-    command = 'codesign --display --entitlements - "%s"' % app['filename']
-    entitlements = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE)
-    entitlements = read_plist_from_string(entitlements.communicate()[0])
+    command = 'codesign --display --entitlements - "{app}" 2> /dev/null'
+    p = subprocess.Popen(command.format(
+        app=app['filename']
+    ), shell=True, stdout=subprocess.PIPE)
+    entitlements = read_plist_from_string(p.communicate()[0])
     access_groups = entitlements.get('keychain-access-groups')
 
     # use application keychain-acccess-groups in the new entitlements
@@ -104,7 +123,7 @@ def recodesign(app, provision, identity, dryrun=False):
     # generate a new entitlements
     entitlements_dict = generate_entitlements(provision['entitlements'], app)
     entitlements = tempfile.NamedTemporaryFile(suffix=".plist", delete=False)
-    entitlements.write(plistlib.writePlistToString(entitlements_dict))
+    entitlements.write(write_plist_to_string(entitlements_dict))
     entitlements.close()
 
     # recodesign
