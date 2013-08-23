@@ -23,7 +23,7 @@ import tempfile
 import subprocess
 
 
-__version__ = '0.1-dev'
+__version__ = '0.1'
 
 
 PY2 = sys.version_info[0] == 2
