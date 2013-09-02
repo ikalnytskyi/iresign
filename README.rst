@@ -30,7 +30,7 @@ I think that's enough to look at this command-line interface::
 
 For instance, you can do something like this::
 
-    $ iresign MyProject.app MyProvision.mobileprovision "iPhone Developer"
+    $ iresign.py MyProject.app MyProvision.mobileprovision "iPhone Developer"
 
 
 How to install?
