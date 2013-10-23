@@ -23,7 +23,7 @@ import tempfile
 import subprocess
 
 
-__version__ = '0.2'
+__version__ = '0.3'
 
 
 PY2 = sys.version_info[0] == 2
@@ -76,7 +76,7 @@ def read_provisioning_profile(filename):
         'app_id_prefix': content['ApplicationIdentifierPrefix'][0],
         'entitlements':  content['Entitlements'],
         'app_id':        content['Entitlements']['application-identifier'],
-        'aps_env':       content['Entitlements']['aps-environment'],
+        'aps_env':       content['Entitlements'].get('aps-environment', None),
         'task_allow':    content['Entitlements']['get-task-allow'],
     }
 
