@@ -12,7 +12,7 @@
     so you can easy to extend it in your own way.
 
     :copyright: (c) 2013, Igor Kalnitsky <igor@kalnitsky.org>
-    :license: 3-clause BSD, see LICENSE for details.
+    :license: BSD, see LICENSE for details.
 """
 import os
 import sys
@@ -23,7 +23,7 @@ import tempfile
 import subprocess
 
 
-__version__ = '0.3'
+__version__ = '0.2.1'
 
 
 PY2 = sys.version_info[0] == 2

@@ -4,6 +4,14 @@ Changelog
 Here you can see the full list of changes between each iResign release.
 
 
+Version 0.2.1
+-------------
+
+Released on November 10, 2013.
+
+- Check for APS environment before printing, since not all provisions have it.
+
+
 Version 0.2
 -----------
 
