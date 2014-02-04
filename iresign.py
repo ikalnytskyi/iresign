@@ -23,7 +23,7 @@ import tempfile
 import subprocess
 
 
-__version__ = '0.2.1'
+__version__ = '0.2.2'
 
 
 PY2 = sys.version_info[0] == 2
@@ -88,7 +88,7 @@ def read_application(filename):
     """
     provision = os.path.join(filename, 'embedded.mobileprovision')
     return {
-        'filename':   filename,
+        'filename':   os.path.abspath(filename),
         'provision':  read_provisioning_profile(provision),
     }
 

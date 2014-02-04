@@ -4,6 +4,14 @@ Changelog
 Here you can see the full list of changes between each iResign release.
 
 
+Version 0.2.2
+-------------
+
+Released on February 04, 2014.
+
+- Fixed broken execution with renamed app file.
+
+
 Version 0.2.1
 -------------
 
